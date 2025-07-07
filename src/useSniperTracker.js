@@ -2,14 +2,26 @@
 
 import { useState } from "react";
 
-export default function useSniperTracker() {
+export default function useSniperTracker(mode = "classic") {
   const [clusterLog, setClusterLog] = useState({});
   const [sniperDigit, setSniperDigit] = useState(null);
   const [sniperAlert, setSniperAlert] = useState(false);
   const [sniperZone, setSniperZone] = useState(false);
   const [sniperLog, setSniperLog] = useState([]);
 
-  const handleTick = (digit) => {
+  const getMinClusters = () => {
+    switch (mode) {
+      case "aggressive":
+        return 2;
+      case "conservative":
+        return 4;
+      case "classic":
+      default:
+        return 3;
+    }
+  };
+
+  const handleTick = (digit, updatedTicks) => {
     let updated = { ...clusterLog };
     let current = updated[digit] || [];
 
@@ -19,11 +31,8 @@ export default function useSniperTracker() {
     if (lastTick && lastTick.endsWith(digit)) {
       let len = parseInt(lastTick.slice(1)) + 1;
       current[current.length - 1] = `G${len}`;
-    } else if (
-      current.length === 0 ||
-      (lastTick && !lastTick.endsWith(digit))
-    ) {
-      // Only add new cluster if it's at least 2 (G2)
+    } else {
+      // Count previous digits for new cluster
       let count = 1;
       for (let i = updatedTicks.length - 2; i >= 0; i--) {
         if (updatedTicks[i] === digit) count++;
@@ -35,14 +44,15 @@ export default function useSniperTracker() {
     updated[digit] = current;
     setClusterLog(updated);
 
-    // Trigger sniper alert if clusters >= 3 for that digit
-    if (updated[digit].length >= 3) {
+    // Trigger sniper alert based on mode
+    const minClusters = getMinClusters();
+    if (updated[digit].length >= minClusters) {
       setSniperDigit(digit);
       setSniperAlert(true);
       setSniperZone(true);
     }
 
-    // Check sniper zone (confirmation of break or not)
+    // Evaluate result when sniper is on
     if (sniperZone && digit === sniperDigit) {
       const prev = updated[sniperDigit] || [];
       const isBreak = prev.length === 0 || prev[prev.length - 1] !== `G2`;
