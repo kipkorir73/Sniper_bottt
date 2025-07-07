@@ -1,80 +1,96 @@
 // File: src/useSniperTracker.js
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 export default function useSniperTracker(mode = "classic") {
-  const [clusterLog, setClusterLog] = useState({});
-  const [sniperDigit, setSniperDigit] = useState(null);
   const [sniperAlert, setSniperAlert] = useState(false);
-  const [sniperZone, setSniperZone] = useState(false);
+  const [sniperDigit, setSniperDigit] = useState(null);
   const [sniperLog, setSniperLog] = useState([]);
+  const [clusterLog, setClusterLog] = useState([]);
+  const sniperZone = useRef(null);
 
-  const getMinClusters = () => {
-    switch (mode) {
-      case "aggressive":
-        return 2;
-      case "conservative":
-        return 4;
-      case "classic":
-      default:
-        return 3;
+  const groupPatterns = (digits) => {
+    const groups = [];
+    let i = 0;
+    while (i < digits.length) {
+      const current = digits[i];
+      let count = 1;
+      while (digits[i + 1] === current) {
+        count++;
+        i++;
+      }
+      if (count >= 2) {
+        groups.push({ digit: current, length: count });
+      }
+      i++;
     }
+    return groups;
   };
 
-  const handleTick = (digit, updatedTicks) => {
-    let updated = { ...clusterLog };
-    let current = updated[digit] || [];
+  const handleTick = (digit, allTicks) => {
+    const clusters = groupPatterns(allTicks.slice(-100));
+    const clusterMap = {};
 
-    const lastTick = current.length > 0 ? current[current.length - 1] : null;
+    clusters.forEach((g) => {
+      if (!clusterMap[g.digit]) clusterMap[g.digit] = [];
+      clusterMap[g.digit].push(g);
+    });
 
-    // Check for cluster length (repeated digits)
-    if (lastTick && lastTick.endsWith(digit)) {
-      let len = parseInt(lastTick.slice(1)) + 1;
-      current[current.length - 1] = `G${len}`;
-    } else {
-      // Count previous digits for new cluster
-      let count = 1;
-      for (let i = updatedTicks.length - 2; i >= 0; i--) {
-        if (updatedTicks[i] === digit) count++;
-        else break;
+    // Detect sniper pattern
+    Object.keys(clusterMap).forEach((d) => {
+      const count = clusterMap[d].length;
+      const lastWasCluster = clusters[clusters.length - 1]?.digit === parseInt(d);
+
+      if (count >= 3 && lastWasCluster && d !== sniperZone.current) {
+        setSniperAlert(true);
+        setSniperDigit(parseInt(d));
+        sniperZone.current = d;
+
+        const pattern = clusterMap[d].map((g) => `G${g.length}`).join(" → ");
+
+        setSniperLog((prev) => [
+          ...prev,
+          {
+            digit: d,
+            pattern,
+            result: "pending",
+            vol: "-",
+            mode
+          }
+        ]);
       }
-      if (count >= 2) current.push(`G${count}`);
-    }
 
-    updated[digit] = current;
-    setClusterLog(updated);
+      if (d === sniperZone.current && count >= 3) {
+        const recentGroup = clusterMap[d];
+        const last = recentGroup[recentGroup.length - 1];
+        const afterCluster = allTicks.slice(-5);
 
-    // Trigger sniper alert based on mode
-    const minClusters = getMinClusters();
-    if (updated[digit].length >= minClusters) {
-      setSniperDigit(digit);
-      setSniperAlert(true);
-      setSniperZone(true);
-    }
-
-    // Evaluate result when sniper is on
-    if (sniperZone && digit === sniperDigit) {
-      const prev = updated[sniperDigit] || [];
-      const isBreak = prev.length === 0 || prev[prev.length - 1] !== `G2`;
-
-      setSniperLog((prevLog) => [
-        ...prevLog,
-        {
-          digit: sniperDigit,
-          clusters: prev,
-          result: isBreak ? "✅ Break" : "❌ Continued"
+        if (afterCluster.filter((v) => v === parseInt(d)).length === 1) {
+          // It broke!
+          setSniperAlert(false);
+          sniperZone.current = null;
+          setSniperLog((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1].result = "break";
+            return updated;
+          });
+        } else if (afterCluster[afterCluster.length - 1] === parseInt(d)) {
+          // Continued cluster
+          setSniperLog((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1].result = "continued";
+            return updated;
+          });
         }
-      ]);
+      }
+    });
 
-      setSniperAlert(false);
-      setSniperZone(false);
-      setClusterLog((log) => ({ ...log, [sniperDigit]: [] }));
-    }
+    setClusterLog(clusters);
   };
 
   return {
-    sniperDigit,
     sniperAlert,
+    sniperDigit,
     sniperZone,
     sniperLog,
     clusterLog,
