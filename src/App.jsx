@@ -8,6 +8,7 @@ import BacktestViewer from "./BacktestViewer";
 import SniperModeSelector from "./SniperModeSelector";
 import VolatilitySelector from "./VolatilitySelector";
 import { speak } from "./speechAlerts";
+import HistoryPanel from "./hooks/HistoryPanel";
 
 export default function App() {
   const [mode, setMode] = useState("classic");
@@ -61,6 +62,9 @@ export default function App() {
             </span>
           ))}
         </div>
+        <p className="mt-2 text-sm text-gray-400">
+          Live Digit: <span className="text-yellow-400 font-bold">{digit}</span>
+        </p>
       </div>
 
       {sniperAlert && (
@@ -70,6 +74,7 @@ export default function App() {
       )}
 
       <BacktestViewer events={sniperLog} />
+      <HistoryPanel logs={sniperLog} />
     </div>
   );
 }
