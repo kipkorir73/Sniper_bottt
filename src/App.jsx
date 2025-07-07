@@ -4,7 +4,7 @@ import useTickHistoryBuffer from "./hooks/useTickHistoryBuffer";
 import usePatternTracker from "./hooks/usePatternTracker";
 import useBreakpointAnalysis from "./hooks/useBreakpointAnalysis";
 import useBacktestEngine from "./hooks/useBacktestEngine";
-import BacktestViewer from "./components/BacktestViewer";
+import BacktestViewer from "./hooks/BacktestViewer";
 
 export default function App() {
   const [volatility, setVolatility] = useState("Volatility 100");
