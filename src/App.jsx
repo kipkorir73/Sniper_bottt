@@ -6,25 +6,29 @@ import StrategySettingsPanel from "./StrategySettingsPanel";
 import ExportSniperLog from "./ExportSniperLog";
 import SniperModeSwitcher from "./SniperModeSwitcher";
 import useMotivationVoice from "./useMotivationVoice";
+import ReplaySlider from "./hooks/.ReplaySlider";
+import BacktestEngine from "./hooks/.BacktestEngine";
 
-const DIGIT_LIMIT = 10000;
+const DIGIT_LIMIT = 50000;
 
 function App() {
   const [digits, setDigits] = useState([]);
   const [clusters, setClusters] = useState([]);
   const [sniperLog, setSniperLog] = useState([]);
   const [autoSniper, setAutoSniper] = useState(true);
-  const [selectedVol, setSelectedVol] = useState("R_100");
   const [strategyConfig, setStrategyConfig] = useState({
     minCount: 3,
     digits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     vols: ["R_10", "R_25", "R_50", "R_75", "R_100"],
+    displayVol: "R_10",
   });
   const [sniperMode, setSniperMode] = useState("classic");
+  const [successStats, setSuccessStats] = useState({});
+  const [replayIndex, setReplayIndex] = useState(null);
 
   const { motivate } = useMotivationVoice();
+
   const wsRef = useRef(null);
-  const allDigitsRef = useRef({});
 
   useEffect(() => {
     const ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
@@ -33,7 +37,6 @@ function App() {
     ws.onopen = () => {
       strategyConfig.vols.forEach((symbol) => {
         ws.send(JSON.stringify({ ticks: symbol, subscribe: 1 }));
-        allDigitsRef.current[symbol] = [];
       });
     };
 
@@ -41,38 +44,38 @@ function App() {
       const data = JSON.parse(msg.data);
       if (data.tick) {
         const digit = Number(data.tick.quote.toString().slice(-1));
-        const vol = data.tick.symbol;
-
-        const entry = { digit, timestamp: data.tick.epoch, vol };
-        allDigitsRef.current[vol] = [...(allDigitsRef.current[vol] || []), entry].slice(-DIGIT_LIMIT);
-
-        if (vol === selectedVol) {
-          setDigits((prev) => [...prev, entry].slice(-20));
-        }
+        const volatility = data.tick.symbol;
+        setDigits((prev) => {
+          const next = [...prev, { digit, timestamp: data.tick.epoch, vol: volatility }];
+          return next.slice(-DIGIT_LIMIT);
+        });
       }
     };
 
     return () => ws.close();
-  }, [strategyConfig.vols, selectedVol]);
+  }, [strategyConfig.vols]);
 
   useEffect(() => {
     if (digits.length < 2) return;
-    const latestDigit = digits[digits.length - 1].digit;
+
+    const currentDisplayVol = strategyConfig.displayVol;
+    const filtered = digits.filter((d) => d.vol === currentDisplayVol);
+    const latestDigit = filtered[filtered.length - 1]?.digit;
 
     let newClusters = [...clusters];
     const last = newClusters[newClusters.length - 1];
 
     if (last && last.digit === latestDigit) {
       last.count++;
-      last.end = digits.length - 1;
+      last.end = filtered.length - 1;
     } else {
-      const secondLast = digits[digits.length - 2].digit;
+      const secondLast = filtered[filtered.length - 2]?.digit;
       if (latestDigit === secondLast) {
         newClusters.push({
           digit: latestDigit,
           count: 2,
-          start: digits.length - 2,
-          end: digits.length - 1,
+          start: filtered.length - 2,
+          end: filtered.length - 1,
         });
       }
     }
@@ -86,31 +89,60 @@ function App() {
       groupedByDigit[c.digit].push(c);
     });
 
+    let stats = {};
     for (const digit in groupedByDigit) {
       const pattern = groupedByDigit[digit];
-      const triggerLevel = sniperMode === "classic" ? 3 : sniperMode === "aggressive" ? 2 : 4;
-
+      const triggerLevel =
+        sniperMode === "classic" ? 3 : sniperMode === "aggressive" ? 2 : 4;
       if (pattern.length >= triggerLevel) {
-        const recentDigit = digits[digits.length - 1].digit;
+        const lastCluster = pattern[pattern.length - 1];
+        const recentDigit = latestDigit;
 
-        if (autoSniper) {
-          if (recentDigit !== Number(digit)) {
-            setSniperLog((prev) => [
-              ...prev,
-              { digit: Number(digit), patternCount: pattern.length, result: "✅ Break", timestamp: Date.now() },
-            ]);
-            motivate(digit, 90);
-          } else {
-            setSniperLog((prev) => [
-              ...prev,
-              { digit: Number(digit), patternCount: pattern.length, result: "❌ Continued", timestamp: Date.now() },
-            ]);
-            motivate(digit, 40);
-          }
+        if (!stats[digit]) stats[digit] = { triggers: 0, breaks: 0 };
+        stats[digit].triggers++;
+
+        if (recentDigit !== Number(digit)) {
+          stats[digit].breaks++;
+          setSniperLog((prev) => [
+            ...prev,
+            {
+              digit: Number(digit),
+              patternCount: pattern.length,
+              result: "✅ Break",
+              timestamp: Date.now(),
+            },
+          ]);
+          motivate(digit, 90);
+        } else {
+          setSniperLog((prev) => [
+            ...prev,
+            {
+              digit: Number(digit),
+              patternCount: pattern.length,
+              result: "❌ Continued",
+              timestamp: Date.now(),
+            },
+          ]);
+          motivate(digit, 40);
         }
       }
     }
+
+    setSuccessStats(stats);
   }, [digits]);
+
+  const renderSuccessStats = () => {
+    return Object.entries(successStats).map(([digit, stats], idx) => {
+      const winRate = ((stats.breaks / stats.triggers) * 100).toFixed(1);
+      return (
+        <div key={idx} className="flex justify-between text-sm">
+          <span>Digit {digit}</span>
+          <span>{stats.breaks}/{stats.triggers} Wins</span>
+          <span>{winRate}%</span>
+        </div>
+      );
+    });
+  };
 
   return (
     <div className="bg-gray-900 min-h-screen text-white p-6">
@@ -119,32 +151,41 @@ function App() {
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <div className="bg-gray-800 p-4 rounded">
-            <h2 className="font-semibold mb-2">🔢 Live Digits (Volatility: {selectedVol})</h2>
-            <div className="mb-2">
-              <select
-                value={selectedVol}
-                onChange={(e) => setSelectedVol(e.target.value)}
-                className="bg-gray-700 text-white p-1 rounded"
-              >
-                {strategyConfig.vols.map((vol) => (
-                  <option key={vol} value={vol}>{vol}</option>
-                ))}
-              </select>
+            <h2 className="font-semibold mb-2">🔢 Live Digits - {strategyConfig.displayVol}</h2>
+            <div className="flex gap-2 mb-2">
+              {strategyConfig.vols.map((vol) => (
+                <button
+                  key={vol}
+                  onClick={() =>
+                    setStrategyConfig((prev) => ({ ...prev, displayVol: vol }))
+                  }
+                  className={`px-2 py-1 rounded text-xs font-bold ${
+                    vol === strategyConfig.displayVol
+                      ? "bg-green-600"
+                      : "bg-gray-600"
+                  }`}
+                >
+                  {vol}
+                </button>
+              ))}
             </div>
             <div className="grid grid-cols-10 gap-1">
-              {digits.map((d, i) => (
-                <div
-                  key={i}
-                  className="text-center p-1 rounded bg-gray-700 text-lg font-bold border border-gray-600"
-                  style={{ backgroundColor: `hsl(${d.digit * 36}, 70%, 30%)` }}
-                >
-                  {d.digit}
-                </div>
-              ))}
+              {digits
+                .filter((d) => d.vol === strategyConfig.displayVol)
+                .slice(-20)
+                .map((d, i) => (
+                  <div
+                    key={i}
+                    className="text-center p-1 rounded bg-gray-700"
+                  >
+                    {d.digit}
+                  </div>
+                ))}
             </div>
             <AutoSniperToggle autoSniper={autoSniper} setAutoSniper={setAutoSniper} />
             <SniperModeSwitcher mode={sniperMode} setMode={setSniperMode} />
             <StrategySettingsPanel config={strategyConfig} setConfig={setStrategyConfig} />
+            <ReplaySlider max={digits.length - 1} value={replayIndex} onChange={setReplayIndex} />
           </div>
         </div>
 
@@ -161,11 +202,17 @@ function App() {
             ))}
           </div>
           <ExportSniperLog sniperLog={sniperLog} />
+
+          <h2 className="font-semibold mt-4 mb-2">📈 Strategy Win Rate</h2>
+          {renderSuccessStats()}
         </div>
+      </div>
+
+      <div className="mt-6">
+        <BacktestEngine digits={digits} config={strategyConfig} mode={sniperMode} />
       </div>
     </div>
   );
 }
 
 export default App;
-
