@@ -1,53 +1,52 @@
-// File: src/components/HistoryPanel.jsx
+// File: src/HistoryPanel.jsx
 
 import React from "react";
 
-export default function HistoryPanel({ logs = [] }) {
-  if (logs.length === 0) return null;
+export default function HistoryPanel({ ticks, sniperLog }) {
+  const digitStats = Array(10).fill(0);
 
-  const wins = logs.filter((log) => log.result === "break").length;
-  const total = logs.length;
-  const accuracy = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
+  ticks.forEach((d) => {
+    if (!isNaN(d)) digitStats[d]++;
+  });
 
   return (
-    <div className="mt-6 p-4 bg-gray-900 border border-gray-700 rounded">
-      <h2 className="text-xl font-bold mb-4">📜 Sniper History Log</h2>
-      <div className="overflow-x-auto">
-        <table className="table-auto w-full text-sm">
-          <thead>
-            <tr className="text-left border-b border-gray-600">
-              <th className="p-2">#</th>
-              <th className="p-2">Digit</th>
-              <th className="p-2">Pattern</th>
-              <th className="p-2">Result</th>
-              <th className="p-2">Vol</th>
-              <th className="p-2">Mode</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.slice(-100).reverse().map((log, index) => (
-              <tr
-                key={index}
-                className={
-                  log.result === "break"
-                    ? "text-green-400"
-                    : "text-red-400"
-                }
-              >
-                <td className="p-2">{total - index}</td>
-                <td className="p-2">{log.digit}</td>
-                <td className="p-2">{log.pattern}</td>
-                <td className="p-2">{log.result}</td>
-                <td className="p-2">{log.vol}</td>
-                <td className="p-2">{log.mode}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="mt-8 p-4 bg-gray-900 rounded shadow">
+      <h3 className="text-xl font-bold mb-3">📜 History (Last 10,000 Ticks)</h3>
+      <p className="text-sm mb-2 text-gray-400">Digit Frequencies:</p>
+      <div className="grid grid-cols-5 gap-2">
+        {digitStats.map((count, digit) => (
+          <div
+            key={digit}
+            className="bg-gray-800 text-white p-2 rounded text-sm flex justify-between"
+          >
+            <span>Digit {digit}</span>
+            <span>{count}x</span>
+          </div>
+        ))}
       </div>
 
-      <div className="mt-4 text-sm text-gray-300">
-        ✅ <strong>{wins}</strong> sniper wins / ❌ <strong>{total - wins}</strong> fails → 🎯 <strong>{accuracy}%</strong> accuracy
+      <div className="mt-6">
+        <h4 className="text-lg font-semibold mb-2">🧠 Sniper Logs:</h4>
+        {sniperLog.length === 0 ? (
+          <p className="text-sm text-gray-500">No sniper events yet.</p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {sniperLog.map((log, index) => (
+              <li
+                key={index}
+                className={`p-2 rounded bg-opacity-20 ${
+                  log.result === "break"
+                    ? "bg-green-700 text-green-300"
+                    : log.result === "continued"
+                    ? "bg-red-700 text-red-300"
+                    : "bg-yellow-700 text-yellow-300"
+                }`}
+              >
+                Digit {log.digit} → {log.pattern} → <strong>{log.result}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
