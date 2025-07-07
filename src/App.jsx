@@ -9,32 +9,12 @@ import useMotivationVoice from "./useMotivationVoice";
 
 const DIGIT_LIMIT = 10000;
 
-function getClusters(entries) {
-  const clusters = [];
-  for (let i = 1; i < entries.length; i++) {
-    const prev = entries[i - 1];
-    const curr = entries[i];
-    if (curr.digit === prev.digit) {
-      if (
-        clusters.length &&
-        clusters[clusters.length - 1].digit === curr.digit &&
-        clusters[clusters.length - 1].end === i - 1
-      ) {
-        clusters[clusters.length - 1].end = i;
-        clusters[clusters.length - 1].count++;
-      } else {
-        clusters.push({ digit: curr.digit, start: i - 1, end: i, count: 2 });
-      }
-    }
-  }
-  return clusters;
-}
-
 function App() {
   const [digits, setDigits] = useState([]);
   const [clusters, setClusters] = useState([]);
   const [sniperLog, setSniperLog] = useState([]);
   const [autoSniper, setAutoSniper] = useState(true);
+  const [selectedVol, setSelectedVol] = useState("R_100");
   const [strategyConfig, setStrategyConfig] = useState({
     minCount: 3,
     digits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -43,8 +23,8 @@ function App() {
   const [sniperMode, setSniperMode] = useState("classic");
 
   const { motivate } = useMotivationVoice();
-
   const wsRef = useRef(null);
+  const allDigitsRef = useRef({});
 
   useEffect(() => {
     const ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
@@ -53,6 +33,7 @@ function App() {
     ws.onopen = () => {
       strategyConfig.vols.forEach((symbol) => {
         ws.send(JSON.stringify({ ticks: symbol, subscribe: 1 }));
+        allDigitsRef.current[symbol] = [];
       });
     };
 
@@ -60,15 +41,19 @@ function App() {
       const data = JSON.parse(msg.data);
       if (data.tick) {
         const digit = Number(data.tick.quote.toString().slice(-1));
-        setDigits((prev) => {
-          const next = [...prev, { digit, timestamp: data.tick.epoch }];
-          return next.slice(-DIGIT_LIMIT);
-        });
+        const vol = data.tick.symbol;
+
+        const entry = { digit, timestamp: data.tick.epoch, vol };
+        allDigitsRef.current[vol] = [...(allDigitsRef.current[vol] || []), entry].slice(-DIGIT_LIMIT);
+
+        if (vol === selectedVol) {
+          setDigits((prev) => [...prev, entry].slice(-20));
+        }
       }
     };
 
     return () => ws.close();
-  }, [strategyConfig.vols]);
+  }, [strategyConfig.vols, selectedVol]);
 
   useEffect(() => {
     if (digits.length < 2) return;
@@ -103,33 +88,22 @@ function App() {
 
     for (const digit in groupedByDigit) {
       const pattern = groupedByDigit[digit];
-      const triggerLevel =
-        sniperMode === "classic" ? 3 : sniperMode === "aggressive" ? 2 : 4;
+      const triggerLevel = sniperMode === "classic" ? 3 : sniperMode === "aggressive" ? 2 : 4;
+
       if (pattern.length >= triggerLevel) {
-        const lastCluster = pattern[pattern.length - 1];
         const recentDigit = digits[digits.length - 1].digit;
 
         if (autoSniper) {
           if (recentDigit !== Number(digit)) {
             setSniperLog((prev) => [
               ...prev,
-              {
-                digit: Number(digit),
-                patternCount: pattern.length,
-                result: "✅ Break",
-                timestamp: Date.now(),
-              },
+              { digit: Number(digit), patternCount: pattern.length, result: "✅ Break", timestamp: Date.now() },
             ]);
             motivate(digit, 90);
           } else {
             setSniperLog((prev) => [
               ...prev,
-              {
-                digit: Number(digit),
-                patternCount: pattern.length,
-                result: "❌ Continued",
-                timestamp: Date.now(),
-              },
+              { digit: Number(digit), patternCount: pattern.length, result: "❌ Continued", timestamp: Date.now() },
             ]);
             motivate(digit, 40);
           }
@@ -138,9 +112,6 @@ function App() {
     }
   }, [digits]);
 
-  const recent = digits.slice(-30);
-  const recentClusters = getClusters(recent);
-
   return (
     <div className="bg-gray-900 min-h-screen text-white p-6">
       <h1 className="text-xl font-bold mb-4">🎯 Digit Differ Sniper Tool</h1>
@@ -148,38 +119,28 @@ function App() {
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <div className="bg-gray-800 p-4 rounded">
-            <h2 className="font-semibold mb-2">🔢 Live Digits</h2>
-            <div className="flex overflow-x-auto space-x-1 p-1 bg-black rounded">
-              {recent.map((entry, i) => {
-                const cluster = recentClusters.find(c => i >= c.start && i <= c.end);
-                const isStart = cluster && i === cluster.start;
-                return (
-                  <div
-                    key={i}
-                    className={`min-w-[45px] text-center py-1 px-2 rounded border ${
-                      cluster
-                        ? "bg-red-800 border-red-400"
-                        : "bg-gray-900 border-gray-600"
-                    }`}
-                  >
-                    <div className="text-xs text-gray-400">
-                      {new Date(entry.timestamp * 1000).toLocaleTimeString("en-GB", {
-                        hour12: false,
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </div>
-                    <div className="text-green-300 text-lg font-bold">
-                      {entry.digit}
-                    </div>
-                    {isStart && (
-                      <div className="text-xs font-bold text-yellow-300">
-                        G{cluster.count}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <h2 className="font-semibold mb-2">🔢 Live Digits (Volatility: {selectedVol})</h2>
+            <div className="mb-2">
+              <select
+                value={selectedVol}
+                onChange={(e) => setSelectedVol(e.target.value)}
+                className="bg-gray-700 text-white p-1 rounded"
+              >
+                {strategyConfig.vols.map((vol) => (
+                  <option key={vol} value={vol}>{vol}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-10 gap-1">
+              {digits.map((d, i) => (
+                <div
+                  key={i}
+                  className="text-center p-1 rounded bg-gray-700 text-lg font-bold border border-gray-600"
+                  style={{ backgroundColor: `hsl(${d.digit * 36}, 70%, 30%)` }}
+                >
+                  {d.digit}
+                </div>
+              ))}
             </div>
             <AutoSniperToggle autoSniper={autoSniper} setAutoSniper={setAutoSniper} />
             <SniperModeSwitcher mode={sniperMode} setMode={setSniperMode} />
@@ -207,3 +168,4 @@ function App() {
 }
 
 export default App;
+
