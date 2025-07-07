@@ -6,11 +6,14 @@ import useSniperTracker from "./useSniperTracker";
 import useBacktestEngine from "./useBacktestEngine";
 import BacktestViewer from "./BacktestViewer";
 import SniperModeSelector from "./SniperModeSelector";
+import VolatilitySelector from "./VolatilitySelector";
 import { speak } from "./speechAlerts";
 
 export default function App() {
   const [mode, setMode] = useState("classic");
-  const { ticks, digit } = useDerivWebSocket("R_100");
+  const [volatility, setVolatility] = useState("R_100");
+
+  const { ticks, digit } = useDerivWebSocket(volatility);
   const {
     sniperDigit,
     sniperAlert,
@@ -29,7 +32,7 @@ export default function App() {
   useEffect(() => {
     if (sniperAlert && sniperDigit !== null) {
       speak(
-        `Sniper Alert: Digit ${sniperDigit} repeating. Pattern forming in ${mode} mode.`,
+        `Sniper Alert: Digit ${sniperDigit} repeating. Pattern forming in ${mode} mode on ${volatility.replace("R_", "Vol ")}.`,
         mode === "aggressive" ? "funny" : mode === "conservative" ? "serious" : "calm"
       );
     }
@@ -41,10 +44,13 @@ export default function App() {
     <div className="bg-black min-h-screen text-white p-6 font-mono">
       <h1 className="text-3xl font-bold mb-4">🎯 Digit Differ Sniper Bot</h1>
 
-      <SniperModeSelector mode={mode} setMode={setMode} />
+      <div className="flex flex-col md:flex-row md:gap-6">
+        <SniperModeSelector mode={mode} setMode={setMode} />
+        <VolatilitySelector selected={volatility} setSelected={setVolatility} />
+      </div>
 
       <div className="mt-6">
-        <h2 className="text-lg mb-2">🔢 Last 30 Digits:</h2>
+        <h2 className="text-lg mb-2">🔢 Last 30 Digits (from {volatility.replace("R_", "Vol ")}):</h2>
         <div className="flex flex-wrap gap-1">
           {ticks.slice(-30).map((d, i) => (
             <span
@@ -59,7 +65,7 @@ export default function App() {
 
       {sniperAlert && (
         <div className="mt-4 p-3 bg-yellow-600 text-black rounded">
-          🚨 Sniper Alert: Digit {sniperDigit} has formed multiple clusters! Prepare!
+          🚨 Sniper Alert: Digit {sniperDigit} formed clusters! Get ready to snipe!
         </div>
       )}
 
