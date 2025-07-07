@@ -5,94 +5,63 @@ import useDerivWebSocket from "./useDerivWebSocket";
 import useSniperTracker from "./useSniperTracker";
 import useBacktestEngine from "./useBacktestEngine";
 import BacktestViewer from "./BacktestViewer";
+import SniperModeSelector from "./SniperModeSelector";
 import { speak } from "./speechAlerts";
 
 export default function App() {
-  const [volatility, setVolatility] = useState("R_100");
-  const [tickLimit] = useState(10000);
-
-  const { ticks, digit } = useDerivWebSocket(volatility);
+  const [mode, setMode] = useState("classic");
+  const { ticks, digit } = useDerivWebSocket("R_100");
   const {
-    sniperAlert,
     sniperDigit,
-    clusterLog,
-    sniperLog,
+    sniperAlert,
     sniperZone,
+    sniperLog,
+    clusterLog,
     handleTick
-  } = useSniperTracker();
-
-  const backtest = useBacktestEngine(ticks, handleTick);
+  } = useSniperTracker(mode);
 
   useEffect(() => {
-    if (digit !== null) handleTick(digit);
+    if (digit) {
+      handleTick(digit, ticks);
+    }
   }, [digit]);
 
   useEffect(() => {
     if (sniperAlert && sniperDigit !== null) {
       speak(
-        `Sniper Alert: Digit ${sniperDigit} formed multiple clusters. Watch for a break. Volatility ${volatility}`
+        `Sniper Alert: Digit ${sniperDigit} repeating. Pattern forming in ${mode} mode.`,
+        mode === "aggressive" ? "funny" : mode === "conservative" ? "serious" : "calm"
       );
     }
   }, [sniperAlert]);
 
+  useBacktestEngine(ticks, (digit) => handleTick(digit, ticks));
+
   return (
-    <div className="min-h-screen bg-black text-white p-4 font-mono">
-      <h1 className="text-2xl mb-4 font-bold">🎯 Deriv Digit Differ Sniper</h1>
+    <div className="bg-black min-h-screen text-white p-6 font-mono">
+      <h1 className="text-3xl font-bold mb-4">🎯 Digit Differ Sniper Bot</h1>
 
-      <div className="mb-4">
-        <label className="mr-2">Volatility:</label>
-        <select
-          className="bg-gray-800 px-2 py-1"
-          value={volatility}
-          onChange={(e) => setVolatility(e.target.value)}
-        >
-          {[
-            "R_10",
-            "R_25",
-            "R_50",
-            "R_75",
-            "R_100"
-          ].map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SniperModeSelector mode={mode} setMode={setMode} />
 
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold">🧠 Last 30 Digits:</h2>
-        <div className="flex gap-1 flex-wrap">
+      <div className="mt-6">
+        <h2 className="text-lg mb-2">🔢 Last 30 Digits:</h2>
+        <div className="flex flex-wrap gap-1">
           {ticks.slice(-30).map((d, i) => (
-            <span key={i} className="bg-gray-700 px-2 py-1 rounded">
+            <span
+              key={i}
+              className="w-6 h-6 flex items-center justify-center bg-gray-800 rounded text-sm"
+            >
               {d}
             </span>
           ))}
         </div>
       </div>
 
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold">📊 Cluster Tracker:</h2>
-        {Object.entries(clusterLog).map(([digit, groups]) => (
-          <div key={digit} className="mb-1">
-            Digit {digit}: {groups.join(" → ")}
-          </div>
-        ))}
-      </div>
-
-      <div className="mb-4">
-        {sniperAlert && (
-          <div className="p-4 bg-red-800 rounded">
-            🚨 Sniper Alert: Digit {sniperDigit} has formed {clusterLog[sniperDigit].length} clusters. Watch next tick!
-          </div>
-        )}
-
-        {sniperZone && (
-          <div className="p-4 bg-yellow-700 rounded mt-2">
-            🎯 Sniper Zone Active: Awaiting confirmation for digit {sniperDigit}...
-          </div>
-        )}
-      </div>
+      {sniperAlert && (
+        <div className="mt-4 p-3 bg-yellow-600 text-black rounded">
+          🚨 Sniper Alert: Digit {sniperDigit} has formed multiple clusters! Prepare!
+        </div>
+      )}
 
       <BacktestViewer events={sniperLog} />
     </div>
