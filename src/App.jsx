@@ -1,13 +1,34 @@
+// File: src/App.jsx
+
 import React, { useEffect, useState, useRef } from "react";
 import AutoSniperToggle from "./AutoSniperToggle";
 import StrategySettingsPanel from "./StrategySettingsPanel";
 import ExportSniperLog from "./ExportSniperLog";
 import SniperModeSwitcher from "./SniperModeSwitcher";
 import useMotivationVoice from "./useMotivationVoice";
-import DigitSuccessStats from "./DigitSuccessStats";
-import BacktestReplayPanel from "./BacktestReplayPanel";
 
 const DIGIT_LIMIT = 10000;
+
+function getClusters(entries) {
+  const clusters = [];
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1];
+    const curr = entries[i];
+    if (curr.digit === prev.digit) {
+      if (
+        clusters.length &&
+        clusters[clusters.length - 1].digit === curr.digit &&
+        clusters[clusters.length - 1].end === i - 1
+      ) {
+        clusters[clusters.length - 1].end = i;
+        clusters[clusters.length - 1].count++;
+      } else {
+        clusters.push({ digit: curr.digit, start: i - 1, end: i, count: 2 });
+      }
+    }
+  }
+  return clusters;
+}
 
 function App() {
   const [digits, setDigits] = useState([]);
@@ -22,9 +43,9 @@ function App() {
   const [sniperMode, setSniperMode] = useState("classic");
 
   const { motivate } = useMotivationVoice();
+
   const wsRef = useRef(null);
 
-  // Connect to Deriv WebSocket API
   useEffect(() => {
     const ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
     wsRef.current = ws;
@@ -49,7 +70,6 @@ function App() {
     return () => ws.close();
   }, [strategyConfig.vols]);
 
-  // Cluster & sniper logic
   useEffect(() => {
     if (digits.length < 2) return;
     const latestDigit = digits[digits.length - 1].digit;
@@ -118,6 +138,9 @@ function App() {
     }
   }, [digits]);
 
+  const recent = digits.slice(-30);
+  const recentClusters = getClusters(recent);
+
   return (
     <div className="bg-gray-900 min-h-screen text-white p-6">
       <h1 className="text-xl font-bold mb-4">🎯 Digit Differ Sniper Tool</h1>
@@ -126,17 +149,38 @@ function App() {
         <div>
           <div className="bg-gray-800 p-4 rounded">
             <h2 className="font-semibold mb-2">🔢 Live Digits</h2>
-            <div className="grid grid-cols-10 gap-1">
-              {digits.slice(-30).map((d, i) => (
-                <div
-                  key={i}
-                  className="text-center p-1 rounded bg-gray-700"
-                >
-                  {d.digit}
-                </div>
-              ))}
+            <div className="flex overflow-x-auto space-x-1 p-1 bg-black rounded">
+              {recent.map((entry, i) => {
+                const cluster = recentClusters.find(c => i >= c.start && i <= c.end);
+                const isStart = cluster && i === cluster.start;
+                return (
+                  <div
+                    key={i}
+                    className={`min-w-[45px] text-center py-1 px-2 rounded border ${
+                      cluster
+                        ? "bg-red-800 border-red-400"
+                        : "bg-gray-900 border-gray-600"
+                    }`}
+                  >
+                    <div className="text-xs text-gray-400">
+                      {new Date(entry.timestamp * 1000).toLocaleTimeString("en-GB", {
+                        hour12: false,
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}
+                    </div>
+                    <div className="text-green-300 text-lg font-bold">
+                      {entry.digit}
+                    </div>
+                    {isStart && (
+                      <div className="text-xs font-bold text-yellow-300">
+                        G{cluster.count}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-
             <AutoSniperToggle autoSniper={autoSniper} setAutoSniper={setAutoSniper} />
             <SniperModeSwitcher mode={sniperMode} setMode={setSniperMode} />
             <StrategySettingsPanel config={strategyConfig} setConfig={setStrategyConfig} />
@@ -157,11 +201,6 @@ function App() {
           </div>
           <ExportSniperLog sniperLog={sniperLog} />
         </div>
-      </div>
-
-      <div className="mt-6">
-        <DigitSuccessStats sniperLog={sniperLog} />
-        <BacktestReplayPanel digits={digits} clusters={clusters} sniperLog={sniperLog} />
       </div>
     </div>
   );
