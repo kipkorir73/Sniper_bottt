@@ -1,94 +1,100 @@
-import React, { useState } from "react";
-import useDerivWebSocket from "./hooks/useDerivWebSocket";
-import useTickHistoryBuffer from "./hooks/useTickHistoryBuffer";
-import usePatternTracker from "./hooks/usePatternTracker";
-import useBreakpointAnalysis from "./hooks/useBreakpointAnalysis";
-import useBacktestEngine from "./hooks/useBacktestEngine";
-import BacktestViewer from "./hooks/BacktestViewer";
+// File: src/App.jsx
+
+import React, { useEffect, useState } from "react";
+import useDerivWebSocket from "./useDerivWebSocket";
+import useSniperTracker from "./useSniperTracker";
+import useBacktestEngine from "./useBacktestEngine";
+import BacktestViewer from "./BacktestViewer";
+import { speak } from "./speechAlerts";
 
 export default function App() {
-  const [volatility, setVolatility] = useState("Volatility 100");
-  const [ticks, setTicks] = useState([]);
-  const [mode, setMode] = useState("live"); // "live" or "history"
+  const [volatility, setVolatility] = useState("R_100");
+  const [tickLimit] = useState(10000);
 
-  const { addTick, getHistory } = useTickHistoryBuffer();
-  const { sniperAlerts, patternClusters } = usePatternTracker(ticks, volatility);
-  const { getStats } = useBreakpointAnalysis();
-  const { sniperBacktestResults } = useBacktestEngine(getHistory());
+  const { ticks, digit } = useDerivWebSocket(volatility);
+  const {
+    sniperAlert,
+    sniperDigit,
+    clusterLog,
+    sniperLog,
+    sniperZone,
+    handleTick
+  } = useSniperTracker();
 
-  // WebSocket live tick feed
-  useDerivWebSocket(volatility, (tick) => {
-    addTick(tick);
-    setTicks(prev => [...prev.slice(-29), tick]);
-  });
+  const backtest = useBacktestEngine(ticks, handleTick);
+
+  useEffect(() => {
+    if (digit !== null) handleTick(digit);
+  }, [digit]);
+
+  useEffect(() => {
+    if (sniperAlert && sniperDigit !== null) {
+      speak(
+        `Sniper Alert: Digit ${sniperDigit} formed multiple clusters. Watch for a break. Volatility ${volatility}`
+      );
+    }
+  }, [sniperAlert]);
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
-      <h1 className="text-2xl font-bold mb-4">🎯 Digit Sniper Bot (Deriv)</h1>
+    <div className="min-h-screen bg-black text-white p-4 font-mono">
+      <h1 className="text-2xl mb-4 font-bold">🎯 Deriv Digit Differ Sniper</h1>
 
-      {/* Volatility & Mode Selector */}
-      <div className="flex items-center gap-4 mb-4">
-        <div>
-          <label className="mr-2">Volatility:</label>
-          <select
-            className="text-black px-2 py-1"
-            value={volatility}
-            onChange={(e) => setVolatility(e.target.value)}
-          >
-            <option>Volatility 10</option>
-            <option>Volatility 25</option>
-            <option>Volatility 50</option>
-            <option>Volatility 75</option>
-            <option>Volatility 100</option>
-          </select>
-        </div>
-        <div>
-          <label className="mr-2">Mode:</label>
-          <select
-            className="text-black px-2 py-1"
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-          >
-            <option value="live">Live</option>
-            <option value="history">History</option>
-          </select>
+      <div className="mb-4">
+        <label className="mr-2">Volatility:</label>
+        <select
+          className="bg-gray-800 px-2 py-1"
+          value={volatility}
+          onChange={(e) => setVolatility(e.target.value)}
+        >
+          {[
+            "R_10",
+            "R_25",
+            "R_50",
+            "R_75",
+            "R_100"
+          ].map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold">🧠 Last 30 Digits:</h2>
+        <div className="flex gap-1 flex-wrap">
+          {ticks.slice(-30).map((d, i) => (
+            <span key={i} className="bg-gray-700 px-2 py-1 rounded">
+              {d}
+            </span>
+          ))}
         </div>
       </div>
 
-      {/* Live Tick Digit Grid */}
-      {mode === "live" && (
-        <>
-          <div className="grid grid-cols-10 gap-1 bg-gray-900 p-2 rounded mb-4">
-            {ticks.map((tick, idx) => (
-              <div
-                key={idx}
-                className="bg-gray-700 text-center rounded py-1 font-mono"
-              >
-                {tick.digit}
-              </div>
-            ))}
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold">📊 Cluster Tracker:</h2>
+        {Object.entries(clusterLog).map(([digit, groups]) => (
+          <div key={digit} className="mb-1">
+            Digit {digit}: {groups.join(" → ")}
           </div>
+        ))}
+      </div>
 
-          {/* Sniper Alerts */}
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold mb-2">📢 Sniper Alerts</h2>
-            {sniperAlerts.length === 0 ? (
-              <p>No sniper alerts yet...</p>
-            ) : (
-              sniperAlerts.map((alert, i) => (
-                <div key={i} className="p-2 bg-green-700 rounded mb-1">
-                  🧠 Digit {alert.digit} formed {alert.sniperCount} patterns on {alert.volatility}
-                </div>
-              ))
-            )}
+      <div className="mb-4">
+        {sniperAlert && (
+          <div className="p-4 bg-red-800 rounded">
+            🚨 Sniper Alert: Digit {sniperDigit} has formed {clusterLog[sniperDigit].length} clusters. Watch next tick!
           </div>
-        </>
-      )}
+        )}
 
-      {/* Backtest History Viewer */}
-      {mode === "history" && (
-        <BacktestViewer events={sniperBacktestResults} />
-      )}
+        {sniperZone && (
+          <div className="p-4 bg-yellow-700 rounded mt-2">
+            🎯 Sniper Zone Active: Awaiting confirmation for digit {sniperDigit}...
+          </div>
+        )}
+      </div>
+
+      <BacktestViewer events={sniperLog} />
     </div>
   );
 }
