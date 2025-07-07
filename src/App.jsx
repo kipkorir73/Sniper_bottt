@@ -1,11 +1,11 @@
-// File: src/App.jsx
-
 import React, { useEffect, useState, useRef } from "react";
 import AutoSniperToggle from "./AutoSniperToggle";
 import StrategySettingsPanel from "./StrategySettingsPanel";
 import ExportSniperLog from "./ExportSniperLog";
 import SniperModeSwitcher from "./SniperModeSwitcher";
 import useMotivationVoice from "./useMotivationVoice";
+import DigitSuccessStats from "./DigitSuccessStats";
+import BacktestReplayPanel from "./BacktestReplayPanel";
 
 const DIGIT_LIMIT = 10000;
 
@@ -22,9 +22,9 @@ function App() {
   const [sniperMode, setSniperMode] = useState("classic");
 
   const { motivate } = useMotivationVoice();
-
   const wsRef = useRef(null);
 
+  // Connect to Deriv WebSocket API
   useEffect(() => {
     const ws = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
     wsRef.current = ws;
@@ -49,6 +49,7 @@ function App() {
     return () => ws.close();
   }, [strategyConfig.vols]);
 
+  // Cluster & sniper logic
   useEffect(() => {
     if (digits.length < 2) return;
     const latestDigit = digits[digits.length - 1].digit;
@@ -135,6 +136,7 @@ function App() {
                 </div>
               ))}
             </div>
+
             <AutoSniperToggle autoSniper={autoSniper} setAutoSniper={setAutoSniper} />
             <SniperModeSwitcher mode={sniperMode} setMode={setSniperMode} />
             <StrategySettingsPanel config={strategyConfig} setConfig={setStrategyConfig} />
@@ -155,6 +157,11 @@ function App() {
           </div>
           <ExportSniperLog sniperLog={sniperLog} />
         </div>
+      </div>
+
+      <div className="mt-6">
+        <DigitSuccessStats sniperLog={sniperLog} />
+        <BacktestReplayPanel digits={digits} clusters={clusters} sniperLog={sniperLog} />
       </div>
     </div>
   );
