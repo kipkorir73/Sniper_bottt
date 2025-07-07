@@ -1,18 +1,28 @@
 // File: src/useDerivWebSocket.js
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
-export default function useDerivWebSocket(symbol = "R_100") {
+const DERIV_API = "wss://ws.derivws.com/websockets/v3";
+
+export default function useDerivWebSocket(selectedVolatility) {
   const [ticks, setTicks] = useState([]);
   const [digit, setDigit] = useState(null);
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    const ws = new WebSocket("wss://ws.derivws.com/websockets/v3");
+    if (!selectedVolatility) return;
+
+    if (socketRef.current) {
+      socketRef.current.close();
+    }
+
+    const ws = new WebSocket(DERIV_API);
+    socketRef.current = ws;
 
     ws.onopen = () => {
       ws.send(
         JSON.stringify({
-          ticks: symbol,
+          ticks: selectedVolatility,
           subscribe: 1
         })
       );
@@ -22,16 +32,16 @@ export default function useDerivWebSocket(symbol = "R_100") {
       const data = JSON.parse(msg.data);
       if (data.tick) {
         const quote = data.tick.quote.toFixed(4);
-        const lastDigit = quote.slice(-1);
-        setDigit(lastDigit);
+        const lastDigit = quote[quote.length - 1];
         setTicks((prev) => [...prev.slice(-9999), lastDigit]);
+        setDigit(lastDigit);
       }
     };
 
     return () => {
       ws.close();
     };
-  }, [symbol]);
+  }, [selectedVolatility]);
 
   return { ticks, digit };
 }
