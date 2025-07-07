@@ -1,47 +1,48 @@
 // File: src/useDerivWebSocket.js
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-const DERIV_API = "wss://ws.derivws.com/websockets/v3";
-
-export default function useDerivWebSocket(selectedVolatility) {
-  const [ticks, setTicks] = useState([]);
-  const [digit, setDigit] = useState(null);
-  const socketRef = useRef(null);
+export default function useDerivWebSocket(volatility) {
+  const [tickDigits, setTickDigits] = useState([]);
+  const [lastDigit, setLastDigit] = useState(null);
+  const ws = useRef(null);
 
   useEffect(() => {
-    if (!selectedVolatility) return;
+    const tickHistory = [];
+    const socket = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");
+    ws.current = socket;
 
-    if (socketRef.current) {
-      socketRef.current.close();
-    }
-
-    const ws = new WebSocket(DERIV_API);
-    socketRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(
+    socket.onopen = () => {
+      socket.send(
         JSON.stringify({
-          ticks: selectedVolatility,
+          ticks: volatility,
           subscribe: 1
         })
       );
     };
 
-    ws.onmessage = (msg) => {
-      const data = JSON.parse(msg.data);
-      if (data.tick) {
-        const quote = data.tick.quote.toFixed(4);
-        const lastDigit = quote[quote.length - 1];
-        setTicks((prev) => [...prev.slice(-9999), lastDigit]);
-        setDigit(lastDigit);
-      }
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      const price = data.tick?.quote;
+      if (!price) return;
+      const digit = parseInt(price.toString().slice(-1));
+      if (isNaN(digit)) return;
+
+      tickHistory.push(digit);
+      if (tickHistory.length > 10000) tickHistory.shift();
+
+      setTickDigits([...tickHistory]);
+      setLastDigit(digit);
     };
 
     return () => {
-      ws.close();
+      socket.close();
     };
-  }, [selectedVolatility]);
+  }, [volatility]);
 
-  return { ticks, digit };
+  return {
+    ticks: tickDigits,
+    digit: lastDigit
+  };
 }
+
